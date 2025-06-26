@@ -40,7 +40,7 @@ Application uses mainly two dataset `population` and `diagnoses`. Make sure that
 
 ## How to use credentials?
 
-Add usernames and passwords to `credentials/credential.txt`. 
+Add usernames and passwords to `credentials/credentials.txt`. 
 
 | "user"       | "password" | 
 | :--------- | :--------------------------------------------------------------------- | 
