@@ -8,6 +8,8 @@ This tool is used for exploring population health with certain diagnoses. For ex
 
 With application you can use regex code (ex. ^G47 | ^G31) to select diagnose group. You can also select which registries are used as a source. Application is also able to log user input and runs. We restricted application show information only for population which has 6 or more persons.
 
+This Project is heavily integrated with functions in ['healthpopR'](https://janikmiet.github.io/healthpopR/)-package. 
+
 ## Common Data model
 
 Application uses mainly two dataset `population` and `diagnoses`. Make sure that the data you are using is corresponding to common data model.
@@ -35,9 +37,14 @@ Application uses mainly two dataset `population` and `diagnoses`. Make sure that
 | DATE_BIRTH | Person date of birth | 
 | AGE | Age of the event | 
 
+
 ## How to use credentials?
 
-Add username and password to `credential.txt`. Enable login page in `global.R` script by changing the `eval_credentials` value to `TRUE`.
+Add usernames and passwords to `credentials/credential.txt`. 
 
+| "user"       | "password" | 
+| :--------- | :--------------------------------------------------------------------- | 
+| user01 | passworduser1 |
+| user02 | passworduser2 |
 
 
