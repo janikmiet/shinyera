@@ -1,0 +1,680 @@
+---
+title: "Exposure Response Analysis (version 1.8.9)"
+description: "This is exposure response analysis"
+date: "`r Sys.time()`"
+output: 
+  html_document: default
+  pdf_document: default
+  word_document: default
+params:
+    report_format: "html"
+    exposure_icd10: "^G47"
+    exposure_icd9: ""
+    exposure_icd8: ""
+    exposure_src: ["avohilmo", "erko", "hilmo", "local", "ksyy", "soshilmo", "syopa"]
+    response_icd10: "^F00|^F01|^F02|^F03|^G30"
+    response_icd9:  ""
+    response_icd8:  ""
+    response_src: ["avohilmo", "erko", "hilmo", "local", "ksyy", "soshilmo", "syopa"]
+    newdiag_before: "FALSE"
+    report_sections: ["Exposure", "Response", "Health", "Survival Analysis", "Cox", "Poisson", "Data Avaibility"]
+    cox1_vars: ["age"]
+    cox2_vars: ["age", "bmi_cat1", "edu"]
+    cox_plot_model: ["Model 2"]
+    cox_plot_overall: ["event"]
+    cox_reference_bmicat1: ["Underweight"]
+    cox_reference_bmicat2: ["Healthy Weight"]
+    cox_reference_edu: ["1 - Low"]
+    response_extra: ["Fractures"]
+    poisson_limits: c(0.3, 3)
+    rendered_by_shiny: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.width = 15, fig.height = 10)
+source("global.R")
+library(knitr)
+```
+
+# Parameters and Options
+
+```{r}
+list(
+  "Exposure ICD10" =(params$exposure_icd10),
+  "Exposure ICD9" = (params$exposure_icd9),
+  "Exposure ICD8" = (params$exposure_icd8),
+  "Exposure SRC" = (params$exposure_src),
+  "Response ICD10" = (params$response_icd10),
+  "Response ICD9" = (params$response_icd9),
+  "Response ICD8" =         (params$response_icd8),
+  "Response SRC" = (params$response_src),
+  "Survival: New Diagnoses Before" = (params$newdiag_before),
+  "Cox Model 1 vars" = params$cox1_vars,
+  "Cox Model 2 vars" = params$cox2_vars,
+  "Cox Plots on Model" = params$cox_plot_model,
+  "Cox Overall plot" = params$cox_plot_overall,
+  "Cox Ref BMI Cat1" = params$cox_reference_bmicat1,
+  "Cox Ref BMI Cat2" = params$cox_reference_bmicat2,
+  "Cox Ref EDU" = params$cox_reference_edu,
+  "Poisson: Response Extras" = (params$response_extra),
+  "Report Sections" = (params$report_sections)
+)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.05)  
+```
+
+```{r data}
+## Exposure populaation perustiedot
+dpop <- healthpopR::classify_population(exposure_icd10 = params$exposure_icd10,
+                                        exposure_icd9 = params$exposure_icd9,
+                                        exposure_icd8 = params$exposure_icd8,
+                                        exposure_src = params$exposure_src,
+                                        response_icd10 = params$response_icd10,
+                                        response_icd9 = params$response_icd9,
+                                        response_icd8 = params$response_icd8,
+                                        response_src = params$response_src,
+                                        data_population = population,
+                                        data_diagnoses = diagnoses,
+                                        runtime_shiny = FALSE
+)
+
+## Exposure Diagnoses 
+exposure_diagnoses <- healthpopR::search_diagnoses(
+  regex_icd10=params$exposure_icd10, 
+  regex_icd9=params$exposure_icd9, 
+  regex_icd8=params$exposure_icd8, 
+  registry_source=params$exposure_src,
+  data_diagnoses = diagnoses
+)
+## Response Diagnoses
+response_diagnoses <- healthpopR::search_diagnoses(
+  regex_icd10=params$response_icd10, 
+  regex_icd9=params$response_icd9, 
+  regex_icd8=params$response_icd8, 
+  registry_source=params$response_src,
+  data_diagnoses = diagnoses
+)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.10)  
+```
+
+```{r, echo=FALSE, eval = ("Exposure" %in% params$report_sections)}
+asis_output("# Exposure\\n")
+```
+
+```{r, echo=FALSE, eval = ("Exposure" %in% params$report_sections)}
+asis_output("## Plot: Exposure Population\\n")
+```
+
+```{r age, echo=FALSE, eval = ("Exposure" %in% params$report_sections)}
+healthpopR::plot_age_distribution(
+  data = dpop,
+  group = "exposure",
+  subgroups = FALSE,
+  colors = colors_groups[c("non-exposure", "exposure")],
+  colors_shade = colorspace::lighten(colors_groups[c("non-exposure", "exposure")], amount = .3))
+
+healthpopR::table_age_distribution(
+  data = dpop,
+  group = "exposure", 
+  subgroups = FALSE)
+```
+
+```{r}
+tbl_exp_edu <- tbl_pop_var(dpop, "exposure", "edu")
+tbl_exp_bmi <- tbl_pop_var(dpop, "exposure", "bmi_cat1")
+tbl_exp_edu
+tbl_exp_bmi
+```
+
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.15)  
+```
+
+```{r, echo=FALSE, eval = ("Exposure" %in% params$report_sections)}
+asis_output("## Table: Selected Diagnoses\\n")
+```
+
+```{r, echo=FALSE, eval = ("Exposure" %in% params$report_sections)}
+asis_output("Exposure diagnoses includes following diagnoses. In this table all cases are listed (for example if same person has ICD-8, ICD-9 and ICD-10 diagnose, all those cases will be listed).\\n")
+```
+
+```{r selected_diagnoses_chunk, echo=FALSE, eval = ("Exposure" %in% params$report_sections)}
+selected_exp_dg <- healthpopR::table_summary_diagnoses(exposure_diagnoses, 
+                                                       group = "exposure", 
+                                                       sum_small_groups = 6)
+if (params$report_format == "html") {
+  DT::datatable(selected_exp_dg, 
+                options = list(
+                  # order = list(6, 'desc'),
+                  rownames = F
+                ))
+}else{
+  knitr::kable(head(selected_exp_dg, 10))
+}
+```
+
+```{r, echo=FALSE, eval = ("Exposure" %in% params$report_sections)}
+asis_output("## Venn Diagram: Registry overlap\\n")
+```
+
+```{r venn, echo = FALSE, eval = ("Exposure" %in% params$report_sections)}
+healthpopR::plot_diagnoses_src(exposure_diagnoses, per_source = FALSE)
+healthpopR::plot_diagnoses_src(exposure_diagnoses, per_source = TRUE)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.2)  
+```
+
+
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("# Response\\n")
+```
+
+
+```{r dplot_age_resp, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+healthpopR::plot_age_distribution(
+      data = dpop,
+      group = "response",
+      subgroups = FALSE,
+      colors = colors_groups[c("non-response", "response")],
+      colors_shade = colorspace::lighten(colors_groups[c("non-response", "response")], amount = .3)
+    )
+healthpopR::table_age_distribution(
+      data = dpop,
+      group = "response", 
+      subgroups = TRUE
+    )
+```
+
+```{r}
+tbl_resp_edu <- tbl_pop_var(dpop, "response", "edu")
+tbl_resp_bmi <- tbl_pop_var(dpop, "response", "bmi_cat1")
+tbl_resp_edu
+tbl_resp_bmi
+```
+
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("## Table: Response Diagnoses\\n")
+```
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("Response diagnoses includes following diagnoses on exposure group:")
+```
+
+```{r selected_resp_dg, echo = FALSE}
+selected_resp_dg <- healthpopR::table_summary_diagnoses(response_diagnoses, 
+                                        group = "response", 
+                                        sum_small_groups = 6)
+if (params$report_format == "html") {
+  DT::datatable( selected_resp_dg, options = list(rownames = F))
+}else{
+  knitr::kable(head(selected_resp_dg, 10))
+}
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.25)  
+```
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("##  First Diagnose Registry Source\\n")
+```
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("Venn diagram shows how the exposure diagnose codes are found in different registries. In this plot only first diagnose per person is listed.\\n")
+```
+
+```{r venn_resp1, echo = FALSE, eval = ("Response" %in% params$report_sections)}
+healthpopR::plot_diagnoses_src(response_diagnoses, per_source = FALSE)
+```
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("##  Venn diagram: Diagnoses Registry Overlap\\n")
+```
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("Venn diagram shows how the exposure diagnose codes are found in different registries. In this plot only we can see in which registries we can find selected diagnoses per patient.\\n")
+```
+
+```{r venn_resp2, echo = FALSE, eval = ("Response" %in% params$report_sections)}
+healthpopR::plot_diagnoses_src(response_diagnoses, per_source = TRUE)
+```
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("## Exposure & Response Cross Tabulation\\n")
+```
+
+```{r crosstab, echo = FALSE, eval = ("Response" %in% params$report_sections)}
+# sjPlot::tab_xtab(var.row = dpop$exposure, var.col = dpop$response, title = "Population exposure and response diagnoses", show.row.prc = TRUE)
+if (params$report_format == "html") {
+  healthpopR::summary_exp_resp_crosstabulation(data = dpop, output = "viewer")
+}else{
+  healthpopR::summary_exp_resp_crosstabulation(data = dpop, output = "docx")
+}
+```
+
+```{r, echo=FALSE, eval = ("Response" %in% params$report_sections)}
+asis_output("## Time difference\\n")
+healthpopR::summary_exp_resp_order(dpop)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.30)  
+```
+
+```{r, echo=FALSE, eval = ("Health" %in% params$report_sections)}
+asis_output("# Health\\n")
+```
+
+```{r, echo=FALSE, eval = ("Health" %in% params$report_sections)}
+asis_output("## Health Profile\\n")
+```
+
+```{r, echo=FALSE, eval = ("Health" %in% params$report_sections)}
+asis_output("This section compares exposure diagnoses group to population, which don't have the exposure. Section plots diagnoses which are more common.")
+```
+
+```{r spiderplot, eval = ("Health" %in% params$report_sections)}
+health_icd10_profile <- healthpopR::classify_icd10_profile(
+  data = dpop, 
+  diagnoses = diagnoses, 
+  exposure_icd10 = params$exposure_icd10, 
+  exposure_src = params$exposure_src
+)
+healthpopR::plot_health_icd10_profile(
+  data = health_icd10_profile,
+  colors_exposure_groups = colors_groups[c("non-exposure", "exposure")],
+  colors_exposure_groups_shade = colorspace::lighten(colors_groups[c("non-exposure", "exposure")], amount = .3)
+)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.35)  
+```
+
+```{r, echo=FALSE, eval = ("Health" %in% params$report_sections)}
+asis_output("## Top ICD-10 Diagnoses\\n")
+```
+
+```{r, echo=FALSE, eval = ("Health" %in% params$report_sections)}
+asis_output("Diagnoses which has over 10 % gap between groups. Diagnoses are aggregated to 3 letters.")
+```
+
+```{r topicd10, eval = ("Health" %in% params$report_sections)}
+tbl_comparison <- healthpopR::tbl_icd10_diff_by_exposure(
+  data = dpop, 
+  diagnoses = diagnoses, 
+  exposure_icd10 = params$exposure_icd10, 
+  exposure_src = params$exposure_src
+)
+healthpopR::plot_icd10_diff_by_exposure(
+  tbl_comparison,
+  limit = 10,
+  colors = unname(colorspace::lighten(colors_groups[c("non-exposure", "exposure")], amount = .3)) 
+)
+
+if (params$report_format == "html") {
+  DT::datatable(tbl_comparison,
+                options = list(
+                  order = list(6, 'desc'),
+                  rownames = F
+                ))
+}else{
+  
+}
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.4)   
+```
+
+```{r, echo=FALSE, eval = ("Survival Analysis" %in% params$report_sections)}
+asis_output("# Survival Analysis\\n")
+```
+
+```{r, echo=FALSE, eval = ("Survival Analysis" %in% params$report_sections)}
+asis_output("Select new diagnose group by regex-code to observe competing risk analysis plots. If option removing cases before the main diagnose is not selected, new diagnoses are set to date 1. If you change setting, you need to Run results again.")
+```
+
+```{r survival, eval = ("Survival Analysis" %in% params$report_sections)}
+dsurv <- healthpopR::create_dsurv(
+      data= dpop,
+      censoring_date = data_censoring_date,
+      filter_early_responses = params$newdiag_before
+    )
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.45)  
+```
+
+```{r, echo=FALSE, eval = ("Survival Analysis" %in% params$report_sections)}
+asis_output("## Kaplan-Meier\\n")
+```
+
+```{r, echo=FALSE, eval = ("Survival Analysis" %in% params$report_sections)}
+asis_output("Survival analysis (Kaplan-Meier) tells how many will get the response diagnose after the exposure diagnose during the time.")
+```
+
+```{r kaplanmeier, eval = ("Survival Analysis" %in% params$report_sections)}
+healthpopR::plot_survival_km(dsurv)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.5)  
+```
+
+```{r, echo=FALSE, eval = ("Survival Analysis" %in% params$report_sections)}
+asis_output("## Competing Risk Analysis\\n")
+```
+
+```{r, echo=FALSE, eval = ("Survival Analysis" %in% params$report_sections)}
+asis_output("Competing Risk analysis compares risk after the main diagnose to death or to the new diagnose.")
+```
+
+```{r competing_risk, eval = ("Survival Analysis" %in% params$report_sections)}
+healthpopR::plot_survival_cr(
+  data = dsurv, 
+  colors = unname(colors_groups[c("response", "dead")])
+)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.55)  
+```
+
+
+
+```{r, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+asis_output("# Cox Model\\n")
+```
+
+```{r cox_data, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+data_cox <- healthpopR::cox_create_data(
+      data = dpop, 
+      data_dates = ostpre_vastpaiv,
+      data_socioeconomic = population_variables,
+      reference_values = list("bmi_cat1" = params$cox_reference_bmicat1, 
+                              "bmi_cat2" = params$cox_reference_bmicat2, 
+                              "edu" = params$cox_reference_edu),
+      censoring_date = data_censoring_date
+    )
+## Model 1
+normal_vars <- params$cox1_vars[params$cox1_vars %in% cox_normal_vars]
+spline_vars <- params$cox1_vars[params$cox1_vars %in% cox_spline_vars]
+cox_model1 <- healthpopR::create_cox_model(
+  data = data_cox,
+  normal_vars = normal_vars,
+  spline_vars = spline_vars,
+  surv_formula = "Surv(tstart, tstop, diagnose) ~ exposure",
+  id_var = "ID"
+)
+## Model 2
+normal_vars <- params$cox2_vars[params$cox2_vars %in% cox_normal_vars]
+spline_vars <- params$cox2_vars[params$cox2_vars %in% cox_spline_vars]
+cox_model2 <- healthpopR::create_cox_model(
+  data = data_cox,
+  normal_vars = normal_vars,
+  spline_vars = spline_vars,
+  surv_formula = "Surv(tstart, tstop, diagnose) ~ exposure",
+  id_var = "ID"
+)
+## d on selected model plot
+if(params$cox_plot_model == "Model 1") d <- cox_model1
+if(params$cox_plot_model == "Model 2") d <- cox_model2
+```
+
+```{r, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+asis_output("## Cox Model 1\\n")
+```
+
+```{r cox_m1, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+## Model 1 output
+broom::tidy(cox_model1, exponentiate = TRUE, conf.int = TRUE) %>%
+  filter(!grepl(pattern = "^splines", x = term))
+```
+
+```{r, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+asis_output("## Cox Model 2\\n")
+```
+
+```{r cox_m2, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+## Model 2 output
+broom::tidy(cox_model2, exponentiate = TRUE, conf.int = TRUE) %>%
+  filter(!grepl(pattern = "^splines", x = term))
+```
+
+```{r, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+asis_output("## Survival Element\\n")
+```
+
+```{r cox_surv, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+healthpopR::cox_plot_overall(
+      data = data_cox,
+      type = params$cox_plot_overall,
+      colors_exposure_groups = unname(colors_groups[c("non-exposure", "exposure")]), 
+      legend_labels = c("No exposure", "Exposure"),
+      conf_int = TRUE,
+      risk_table = FALSE
+    )
+```
+
+```{r, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+asis_output("## Splines\\n")
+```
+
+```{r cox_splines1, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+## if age_bs in model
+if ("splines::bs(age_bs)1" %in% names(d$coefficients)){
+  healthpopR::cox_plot_spline(
+        d,
+        spline_var = "age_bs",
+        title = "Spline effect",
+        xlab = NULL,
+        ylab = "Predicted risk",
+        color = "#4C6EF5"
+      )
+}
+```
+
+```{r cox_splines2, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+## if bmi in model
+if ("splines::bs(bmi)1" %in% names(d$coefficients)){
+  healthpopR::cox_plot_spline(
+        d,
+        spline_var = "bmi",
+        title = "Spline effect",
+        xlab = NULL,
+        ylab = "Predicted risk",
+        color = "#4C6EF5"
+      )
+}
+```
+
+```{r, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+asis_output("## Forestplot\\n")
+```
+
+```{r cox_forestplot, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+## TODO tassa ei loyda data_cox
+# testmodel <- coxph(as.formula(paste(deparse(d$formula), collapse = " ")), data = data_cox)
+# ggforest(testmodel)
+```
+
+```{r, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+asis_output("## Diagnostic\\n")
+```
+
+```{r cox_diagnostics, echo=FALSE, eval = ("Cox" %in% params$report_sections)}
+cox_test <- cox.zph(d)
+ggcoxzph(cox_test)
+cox_test
+```
+
+
+```{r, echo=FALSE, eval = ("Poisson" %in% params$report_sections)}
+asis_output("# Poisson Regression\\n")
+```
+
+```{r poisson, eval = ("Poisson" %in% params$report_sections)}
+## DG and Mortality
+d1 <- healthpopR::pirr_data(
+  d_exposure = exposure_diagnoses,
+  d_response= response_diagnoses,
+  d_population = dpop
+)
+final1 <- healthpopR::pirr_results(d1, 
+                                   colors=colors_groups[c("non-exposure", "exposure")],
+                                   limits =  params$poisson_limits)
+## Extra Responses; Fractures
+d2 <- healthpopR::pirr_data(
+  d_exposure = exposure_diagnoses,
+  d_response= diagnoses %>% dplyr::filter(DGREG == "FRACTURES"),
+  d_population = dpop,
+  dg_list = list(any_fracture = "ankle+forearm+hip+humerus+vertebral",
+                 Osteoporotic = "forearm+hip+humerus+vertebral"
+  )
+)
+d2[["Death"]] <- NULL
+final2 <- healthpopR::pirr_results(d2, 
+                                   colors=unname(colors_groups[c("non-exposure", "exposure")]),
+                                   limits =  params$poisson_limits)
+results <- c(final1, final2)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.6)  
+```
+
+```{r, echo=FALSE, eval = ("Poisson" %in% params$report_sections)}
+asis_output("## Response\\n")
+```
+
+```{r poisson_response, eval = ("Poisson" %in% params$report_sections)}
+results[["DG"]][["plot1"]]
+results[["DG"]][["plot2"]]
+results[["DG"]][["table"]]
+```
+
+```{r, echo=FALSE, eval = ("Poisson" %in% params$report_sections)}
+asis_output("## Mortality \\n")
+```
+
+```{r poisson_mortality, eval = ("Poisson" %in% params$report_sections)}
+results[["Death"]][["plot1"]]
+results[["Death"]][["plot2"]]
+results[["Death"]][["table"]]
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.65)  
+```
+
+```{r, echo=FALSE, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+asis_output("## Fractures\\n")
+```
+
+```{r poisson_extra1, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+results[["any_fracture"]][["plot1"]]
+results[["any_fracture"]][["plot2"]]
+results[["any_fracture"]][["table"]]
+```
+
+```{r poisson_extra2, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+results[["ankle"]][["plot1"]]
+results[["ankle"]][["plot2"]]
+results[["ankle"]][["table"]]
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.7)  
+```
+
+```{r poisson_extra3, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+results[["forearm"]][["plot1"]]
+results[["forearm"]][["plot2"]]
+results[["forearm"]][["table"]]
+```
+
+```{r poisson_extra4, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+results[["hip"]][["plot1"]]
+results[["hip"]][["plot2"]]
+results[["hip"]][["table"]]
+```
+
+```{r poisson_extra5, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+results[["humerus"]][["plot1"]]
+results[["humerus"]][["plot2"]]
+results[["humerus"]][["table"]]
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.75)  
+```
+
+```{r poisson_extra6, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+results[["vertebral"]][["plot1"]]
+results[["vertebral"]][["plot2"]]
+results[["vertebral"]][["table"]]
+```
+
+```{r poisson_extra7, eval = (("Poisson" %in% params$report_sections) & ("Fractures" %in% params$vaste_extra))}
+results[["Osteoporotic"]][["plot1"]]
+results[["Osteoporotic"]][["plot2"]]
+results[["Osteoporotic"]][["table"]]
+```
+
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.8)  
+```
+
+```{r, echo=FALSE, eval = ("Data Avaibility" %in% params$report_sections)}
+asis_output("# Data Avaibility\\n")
+```
+
+```{r, echo=FALSE, eval = ("Data Avaibility" %in% params$report_sections)}
+asis_output("For further analysis this section shows what OSTPRE questionnaire data is available on exposure diagnose population.")
+```
+
+```{r datasurvey, eval = ("Data Avaibility" %in% params$report_sections)}
+plot_datavaibility_all(dpop)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.85)
+```
+
+```{r, echo=FALSE, eval = ("Data Avaibility" %in% params$report_sections)}
+asis_output("## Original Cohort\\n")
+```
+
+```{r datasurvey_original, eval = ("Data Avaibility" %in% params$report_sections)}
+plot_datavaibility_original(dpop)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.90)
+```
+
+```{r, echo=FALSE, eval = ("Data Avaibility" %in% params$report_sections)}
+asis_output("## Extra Cohort\\n")
+```
+
+```{r datasurvey_extra, eval = ("Data Avaibility" %in% params$report_sections)}
+plot_datavaibility_extra(dpop)
+```
+
+```{r}
+if((params$rendered_by_shiny)) shiny::setProgress(0.95)  
+```
+
